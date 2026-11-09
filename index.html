@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neon Snake - 獲物食べゲーム</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Noto+Sans+JP:wght@400;700&display=swap');
+
+        body {
+            font-family: 'Orbitron', 'Noto Sans JP', sans-serif;
+            background-color: #050505;
+            background-image: 
+                radial-gradient(circle at 15% 50%, rgba(20, 241, 149, 0.05), transparent 25%),
+                radial-gradient(circle at 85% 30%, rgba(255, 42, 122, 0.05), transparent 25%);
+            overscroll-behavior-y: contain; /* スワイプによるリロード防止 */
+            touch-action: none;
+        }
+
+        #game-board {
+            box-shadow: 0 0 20px rgba(20, 241, 149, 0.2), inset 0 0 20px rgba(20, 241, 149, 0.1);
+            border: 1px solid rgba(20, 241, 149, 0.3);
+            background-color: rgba(10, 10, 10, 0.8);
+            background-image: 
+                linear-gradient(rgba(20, 241, 149, 0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(20, 241, 149, 0.05) 1px, transparent 1px);
+            background-size: 5% 5%; /* JSで動的に設定しますが初期値として */
+            image-rendering: pixelated;
+        }
+
+        .glass-panel {
+            background: rgba(20, 20, 20, 0.6);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .btn-neon {
+            background: transparent;
+            color: #14f195;
+            border: 2px solid #14f195;
+            text-transform: uppercase;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 10px rgba(20, 241, 149, 0.2), inset 0 0 10px rgba(20, 241, 149, 0.2);
+        }
+        .btn-neon:hover, .btn-neon:active {
+            background: #14f195;
+            color: #000;
+            box-shadow: 0 0 20px rgba(20, 241, 149, 0.6), inset 0 0 10px rgba(20, 241, 149, 0.4);
+        }
+
+        /* D-Pad styles */
+        .d-pad-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 50%;
+            transition: background 0.1s;
+            user-select: none;
+        }
+        .d-pad-btn:active {
+            background: rgba(20, 241, 149, 0.3);
+            border-color: #14f195;
+        }
+
+        /* Modal animation */
+        @keyframes popIn {
+            0% { transform: scale(0.9) translateY(-10px); opacity: 0; }
+            100% { transform: scale(1) translateY(0); opacity: 1; }
+        }
+        .modal-enter {
+            animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen overflow-hidden flex flex-col items-center justify-center text-white">
+
+    <!-- Header / Stats -->
+    <div class="w-full max-w-md px-4 py-3 flex justify-between items-center z-10 glass-panel rounded-b-2xl mb-4 shadow-lg">
+        <div>
+            <h1 class="text-2xl font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-[#14f195] to-[#0ea5e9]">
+                NEON SNAKE
+            </h1>
+        </div>
+        <div class="text-right">
+            <p class="text-xs text-gray-400">SCORE</p>
+            <p class="text-2xl font-bold text-[#ff2a7a]" id="score-display">0</p>
+        </div>
+    </div>
+
+    <!-- Game Container -->
+    <div class="relative flex-grow flex items-center justify-center w-full max-w-md px-4">
+        <!-- Canvas wrapper to maintain aspect ratio -->
+        <div class="relative w-full aspect-square max-w-[400px]">
+            <canvas id="game-board" class="w-full h-full rounded-xl"></canvas>
+            
+            <!-- Game Over / Start Modal -->
+            <div id="overlay" class="absolute inset-0 z-20 flex flex-col items-center justify-center glass-panel rounded-xl modal-enter bg-black/60">
+                <h2 id="overlay-title" class="text-4xl font-bold mb-2 tracking-widest text-[#14f195] drop-shadow-[0_0_10px_rgba(20,241,149,0.8)]">READY?</h2>
+                <p id="overlay-desc" class="mb-6 text-gray-300 text-sm">獲物（赤い光）を集めろ</p>
+                <button id="start-btn" class="btn-neon px-8 py-3 rounded-full font-bold text-lg cursor-pointer flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" fill-rule="evenodd"></path></svg>
+                    START
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile Controls (D-Pad) -->
+    <div class="w-full max-w-md p-4 flex flex-col items-center gap-2 z-10 mb-4 sm:hidden">
+        <button id="btn-up" class="d-pad-btn w-14 h-14" data-key="ArrowUp">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path></svg>
+        </button>
+        <div class="flex gap-12">
+            <button id="btn-left" class="d-pad-btn w-14 h-14" data-key="ArrowLeft">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+            </button>
+            <button id="btn-right" class="d-pad-btn w-14 h-14" data-key="ArrowRight">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+            </button>
+        </div>
+        <button id="btn-down" class="d-pad-btn w-14 h-14" data-key="ArrowDown">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+        </button>
+    </div>
+
+    <!-- Desktop instructions -->
+    <div class="hidden sm:block text-gray-500 text-sm mb-6 z-10">
+        矢印キー ( ↑ ↓ ← → ) で移動
+    </div>
+
+    <script>
+        /**
+         * Neon Snake Game Logic
+         * HTML5 CanvasとJavaScriptを用いたクラシックなスネークゲーム
+         */
+        const canvas = document.getElementById('game-board');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('score-display');
+        const overlay = document.getElementById('overlay');
+        const overlayTitle = document.getElementById('overlay-title');
+        const overlayDesc = document.getElementById('overlay-desc');
+        const startBtn = document.getElementById('start-btn');
+
+        // ゲーム設定
+        const GRID_SIZE = 20; // 20x20のグリッド
+        const BASE_SPEED = 150; // ミリ秒ごとの更新間隔
+        const MIN_SPEED = 60; // 最高速度
+        
+        let tileCount = GRID_SIZE;
+        let tileSize = 0;
+        let gameLoopId;
+        let isPlaying = false;
+        let score = 0;
+        let speed = BASE_SPEED;
+
+        // スネークの状態
+        let snake = [];
+        let dx = 0; // x方向の速度 (1, -1, 0)
+        let dy = 0; // y方向の速度 (1, -1, 0)
+        let nextDx = 0; // 次のフレームでのx方向速度（自己衝突回避用）
+        let nextDy = 0; // 次のフレームでのy方向速度
+
+        // 獲物の状態
+        let food = { x: 0, y: 0 };
+        let foodGlowAngle = 0; // アニメーション用
+
+        // 初期化処理
+        function initGame() {
+            // キャンバスのサイズをCSSの表示サイズに合わせる（高解像度対応）
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = rect.height;
+            tileSize = canvas.width / tileCount;
+
+            // 背景のグリッド線のサイズを同期
+            canvas.style.backgroundSize = `${100 / tileCount}% ${100 / tileCount}%`;
+
+            // スネークの初期配置（中央）
+            const startX = Math.floor(tileCount / 2);
+            const startY = Math.floor(tileCount / 2);
+            snake = [
+                { x: startX, y: startY },
+                { x: startX, y: startY + 1 }, // 尻尾
+                { x: startX, y: startY + 2 }  // 尻尾
+            ];
+
+            // 初期移動方向（上）
+            dx = 0;
+            dy = -1;
+            nextDx = 0;
+            nextDy = -1;
+
+            score = 0;
+            speed = BASE_SPEED;
+            scoreDisplay.innerText = score;
+            scoreDisplay.style.color = "#14f195"; // 初期色
+
+            spawnFood();
+            
+            // 初回描画
+            draw();
+        }
+
+        // ゲーム開始
+        function startGame() {
+            if (isPlaying) return;
+            initGame();
+            overlay.classList.add('hidden');
+            isPlaying = true;
+            gameLoopId = setTimeout(gameLoop, speed);
+        }
+
+        // ゲームオーバー処理
+        function gameOver() {
+            isPlaying = false;
+            clearTimeout(gameLoopId);
+            
+            overlay.classList.remove('hidden');
+            overlayTitle.innerText = "GAME OVER";
+            overlayTitle.style.color = "#ff2a7a";
+            overlayTitle.style.textShadow = "0 0 10px rgba(255, 42, 122, 0.8)";
+            
+            overlayDesc.innerHTML = `SCORE: <span class="font-bold text-white text-xl">${score}</span>`;
+            startBtn.innerHTML = "RETRY";
+        }
+
+        // メインループ
+        function gameLoop() {
+            if (!isPlaying) return;
+
+            update();
+            draw();
+
+            if (isPlaying) {
+                gameLoopId = setTimeout(gameLoop, speed);
+            }
+        }
+
+        // 状態更新
+        function update() {
+            // 入力方向の適用（逆走防止）
+            if (nextDx !== 0 && dx !== -nextDx) { dx = nextDx; dy = 0; }
+            if (nextDy !== 0 && dy !== -nextDy) { dy = nextDy; dx = 0; }
+
+            // 新しい頭の位置を計算
+            const head = { x: snake[0].x + dx, y: snake[0].y + dy };
+
+            // 衝突判定（壁）
+            if (head.x < 0 || head.x >= tileCount || head.y < 0 || head.y >= tileCount) {
+                gameOver();
+                return;
+            }
+
+            // 衝突判定（自分自身の体）
+            for (let i = 0; i < snake.length; i++) {
+                if (snake[i].x === head.x && snake[i].y === head.y) {
+                    gameOver();
+                    return;
+                }
+            }
+
+            snake.unshift(head); // 頭を追加
+
+            // 獲物を食べた判定
+            if (head.x === food.x && head.y === food.y) {
+                score += 10;
+                scoreDisplay.innerText = score;
+                
+                // スコアの色を一時的に白くしてフラッシュさせる効果
+                scoreDisplay.style.color = "#fff";
+                setTimeout(() => scoreDisplay.style.color = "#ff2a7a", 150);
+
+                // 少しずつスピードアップ
+                if (speed > MIN_SPEED) {
+                    speed -= 2; 
+                }
+
+                spawnFood();
+                // 尻尾は削除しない（体が伸びる）
+            } else {
+                snake.pop(); // 食べていなければ尻尾を削除して移動を表現
+            }
+        }
+
+        // 描画処理
+        function draw() {
+            // 背景クリア
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 獲物の描画 (ネオンレッドの光る円)
+            foodGlowAngle += 0.1;
+            const glowSize = (Math.sin(foodGlowAngle) * 0.2 + 0.8); // 0.6 to 1.0
+            
+            const fx = food.x * tileSize + tileSize / 2;
+            const fy = food.y * tileSize + tileSize / 2;
+            const radius = (tileSize / 2) * 0.7 * glowSize;
+
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#ff2a7a';
+            ctx.fillStyle = '#ff2a7a';
+            ctx.beginPath();
+            ctx.arc(fx, fy, radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0; // リセット
+
+            // スネークの描画
+            snake.forEach((segment, index) => {
+                const x = segment.x * tileSize;
+                const y = segment.y * tileSize;
+                
+                // 頭から尻尾にかけて色をグラデーションさせる
+                const ratio = index / snake.length;
+                
+                if (index === 0) {
+                    // 頭 (明るい緑、少し大きい)
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = '#14f195';
+                    ctx.fillStyle = '#14f195';
+                    roundRect(ctx, x + 1, y + 1, tileSize - 2, tileSize - 2, 6);
+                    ctx.fill();
+                    
+                    // 目を描画
+                    ctx.shadowBlur = 0;
+                    ctx.fillStyle = '#000';
+                    let eyeOffset = tileSize * 0.25;
+                    let eyeSize = tileSize * 0.15;
+                    
+                    if (dx === 1) { // 右
+                        ctx.fillRect(x + tileSize - eyeOffset - eyeSize, y + eyeOffset, eyeSize, eyeSize);
+                        ctx.fillRect(x + tileSize - eyeOffset - eyeSize, y + tileSize - eyeOffset - eyeSize, eyeSize, eyeSize);
+                    } else if (dx === -1) { // 左
+                        ctx.fillRect(x + eyeOffset, y + eyeOffset, eyeSize, eyeSize);
+                        ctx.fillRect(x + eyeOffset, y + tileSize - eyeOffset - eyeSize, eyeSize, eyeSize);
+                    } else if (dy === -1) { // 上
+                        ctx.fillRect(x + eyeOffset, y + eyeOffset, eyeSize, eyeSize);
+                        ctx.fillRect(x + tileSize - eyeOffset - eyeSize, y + eyeOffset, eyeSize, eyeSize);
+                    } else { // 下
+                        ctx.fillRect(x + eyeOffset, y + tileSize - eyeOffset - eyeSize, eyeSize, eyeSize);
+                        ctx.fillRect(x + tileSize - eyeOffset - eyeSize, y + tileSize - eyeOffset - eyeSize, eyeSize, eyeSize);
+                    }
+
+                } else {
+                    // 体
+                    ctx.shadowBlur = 0;
+                    // 少しずつ青っぽく、暗くする
+                    const r = Math.floor(20 - ratio * 10);
+                    const g = Math.floor(241 - ratio * 100);
+                    const b = Math.floor(149 + ratio * 100);
+                    ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+                    
+                    // マージンを入れて節を表現
+                    roundRect(ctx, x + 2, y + 2, tileSize - 4, tileSize - 4, 4);
+                    ctx.fill();
+                }
+            });
+            ctx.shadowBlur = 0; // リセット
+        }
+
+        // 角丸四角形を描画するヘルパー関数
+        function roundRect(ctx, x, y, width, height, radius) {
+            ctx.beginPath();
+            ctx.moveTo(x + radius, y);
+            ctx.lineTo(x + width - radius, y);
+            ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+            ctx.lineTo(x + width, y + height - radius);
+            ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+            ctx.lineTo(x + radius, y + height);
+            ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+            ctx.lineTo(x, y + radius);
+            ctx.quadraticCurveTo(x, y, x + radius, y);
+            ctx.closePath();
+        }
+
+        // 獲物の配置
+        function spawnFood() {
+            let valid = false;
+            while (!valid) {
+                food.x = Math.floor(Math.random() * tileCount);
+                food.y = Math.floor(Math.random() * tileCount);
+                
+                // スネークの体と重ならないかチェック
+                valid = true;
+                for (let segment of snake) {
+                    if (segment.x === food.x && segment.y === food.y) {
+                        valid = false;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // キーボード入力処理
+        window.addEventListener('keydown', (e) => {
+            // スクロール防止
+            if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key)) {
+                e.preventDefault();
+            }
+
+            handleInput(e.key);
+        });
+
+        // 入力ハンドリング共通処理
+        function handleInput(key) {
+            if (!isPlaying && key === "Enter") {
+                startGame();
+                return;
+            }
+
+            if (!isPlaying) return;
+
+            switch(key) {
+                case 'ArrowUp':
+                case 'w':
+                case 'W':
+                    if (dy === 0) { nextDx = 0; nextDy = -1; }
+                    break;
+                case 'ArrowDown':
+                case 's':
+                case 'S':
+                    if (dy === 0) { nextDx = 0; nextDy = 1; }
+                    break;
+                case 'ArrowLeft':
+                case 'a':
+                case 'A':
+                    if (dx === 0) { nextDx = -1; nextDy = 0; }
+                    break;
+                case 'ArrowRight':
+                case 'd':
+                case 'D':
+                    if (dx === 0) { nextDx = 1; nextDy = 0; }
+                    break;
+            }
+        }
+
+        // UIイベントバインディング
+        startBtn.addEventListener('click', startGame);
+
+        // モバイルD-Padコントロール
+        const dPadButtons = document.querySelectorAll('.d-pad-btn');
+        dPadButtons.forEach(btn => {
+            // タッチとマウス両方対応
+            const trigger = (e) => {
+                e.preventDefault();
+                handleInput(btn.getAttribute('data-key'));
+            };
+            btn.addEventListener('touchstart', trigger, {passive: false});
+            btn.addEventListener('mousedown', trigger);
+        });
+
+        // リサイズ時の再描画（アスペクト比維持）
+        window.addEventListener('resize', () => {
+            if(!isPlaying) {
+                // プレイ中でなければサイズだけ合わせる
+                initGame();
+                scoreDisplay.innerText = "0";
+            }
+        });
+
+        // アニメーションループ開始用のダミー描画（画面表示用）
+        window.onload = () => {
+            initGame();
+            // ゲーム開始前はループを回さず静止画を表示
+        };
+    </script>
+</body>
+</html>
