@@ -215,14 +215,14 @@
         }
 
         // ゲームオーバー処理
-        function gameOver() {
+        function gameOver(cleared = false) {
             isPlaying = false;
             clearTimeout(gameLoopId);
             
             overlay.classList.remove('hidden');
-            overlayTitle.innerText = "GAME OVER";
-            overlayTitle.style.color = "#ff2a7a";
-            overlayTitle.style.textShadow = "0 0 10px rgba(255, 42, 122, 0.8)";
+            overlayTitle.innerText = cleared ? "ALL CLEAR" : "GAME OVER";
+            overlayTitle.style.color = cleared ? "#14f195" : "#ff2a7a";
+            overlayTitle.style.textShadow = `0 0 10px ${cleared ? 'rgba(20, 241, 149, 0.8)' : 'rgba(255, 42, 122, 0.8)'}`;
             
             overlayDesc.innerHTML = `SCORE: <span class="font-bold text-white text-xl">${score}</span>`;
             startBtn.innerHTML = "RETRY";
@@ -377,6 +377,10 @@
 
         // 獲物の配置
         function spawnFood() {
+            if (snake.length >= tileCount * tileCount) {
+                gameOver(true);
+                return;
+            }
             let valid = false;
             while (!valid) {
                 food.x = Math.floor(Math.random() * tileCount);
